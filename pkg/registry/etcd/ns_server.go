@@ -97,23 +97,22 @@ func (n *etcdNSRegistryServer) watch(query *registry.NetworkServiceQuery, s regi
 }
 
 func (n *etcdNSRegistryServer) Find(query *registry.NetworkServiceQuery, s registry.NetworkServiceRegistry_FindServer) error {
+	list, err := n.client.NetworkservicemeshV1().NetworkServices(n.ns).List(s.Context(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(list.Items); i++ {
+		item := (*registry.NetworkService)(&list.Items[i].Spec)
+		if matchutils.MatchNetworkServices(query.NetworkService, item) {
+			err := s.Send(item)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	if query.Watch {
 		if err := n.watch(query, s); err != nil && !errors.Is(err, io.EOF) {
 			return err
-		}
-	} else {
-		list, err := n.client.NetworkservicemeshV1().NetworkServices(n.ns).List(s.Context(), metav1.ListOptions{})
-		if err != nil {
-			return err
-		}
-		for i := 0; i < len(list.Items); i++ {
-			item := (*registry.NetworkService)(&list.Items[i].Spec)
-			if matchutils.MatchNetworkServices(query.NetworkService, item) {
-				err := s.Send(item)
-				if err != nil {
-					return err
-				}
-			}
 		}
 	}
 	return next.NetworkServiceRegistryServer(s.Context()).Find(query, s)

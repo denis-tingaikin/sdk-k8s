@@ -17,19 +17,53 @@ package etcd_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/networkservicemesh/api/pkg/api/registry"
+	"github.com/networkservicemesh/sdk/pkg/registry/core/adapters"
 	"github.com/stretchr/testify/require"
 
 	"github.com/networkservicemesh/sdk-k8s/pkg/registry/etcd"
 	"github.com/networkservicemesh/sdk-k8s/pkg/tools/k8s/client/clientset/versioned/fake"
 )
 
-func Test_NSEReRegister(t *testing.T) {
+func Test_NSE_Reregister(t *testing.T) {
 	s := etcd.NewNetworkServiceEndpointRegistryServer(context.Background(), "default", fake.NewSimpleClientset())
 	_, err := s.Register(context.Background(), &registry.NetworkServiceEndpoint{Name: "nse-1"})
 	require.NoError(t, err)
 	_, err = s.Register(context.Background(), &registry.NetworkServiceEndpoint{Name: "nse-1", NetworkServiceNames: []string{"ns-1"}})
 	require.NoError(t, err)
+}
+
+func Test_NSE_Find(t *testing.T) {
+	s := etcd.NewNetworkServiceEndpointRegistryServer(context.Background(), "default", fake.NewSimpleClientset())
+	_, err := s.Register(context.Background(), &registry.NetworkServiceEndpoint{Name: "nse-1", NetworkServiceNames: []string{"ns-1"}})
+	require.NoError(t, err)
+	_, err = s.Register(context.Background(), &registry.NetworkServiceEndpoint{Name: "nse-2", NetworkServiceNames: []string{"ns-1"}})
+	require.NoError(t, err)
+
+	client := adapters.NetworkServiceEndpointServerToClient(s)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	stream, err := client.Find(ctx, &registry.NetworkServiceEndpointQuery{Watch: true, NetworkServiceEndpoint: &registry.NetworkServiceEndpoint{NetworkServiceNames: []string{"ns-1"}}})
+	require.NoError(t, err)
+
+	ch := registry.ReadNetworkServiceEndpointChannel(stream)
+
+	nse1 := <-ch
+	nse2 := <-ch
+	go func() {
+		time.Sleep(time.Second / 2)
+		_, _ = s.Register(context.Background(), &registry.NetworkServiceEndpoint{Name: "nse-3", NetworkServiceNames: []string{"ns-1"}})
+
+	}()
+	nse3 := <-ch
+
+	fmt.Println(nse1)
+	fmt.Println(nse2)
+	fmt.Println(nse3)
 }

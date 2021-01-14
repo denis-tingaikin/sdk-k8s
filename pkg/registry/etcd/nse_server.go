@@ -74,23 +74,22 @@ func (n *etcdNSERegistryServer) Register(ctx context.Context, request *registry.
 }
 
 func (n *etcdNSERegistryServer) Find(query *registry.NetworkServiceEndpointQuery, s registry.NetworkServiceEndpointRegistry_FindServer) error {
+	list, err := n.client.NetworkservicemeshV1().NetworkServiceEndpoints(n.ns).List(s.Context(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(list.Items); i++ {
+		item := (*registry.NetworkServiceEndpoint)(&list.Items[i].Spec)
+		if matchutils.MatchNetworkServiceEndpoints(query.NetworkServiceEndpoint, item) {
+			err := s.Send(item)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	if query.Watch {
 		if err := n.watch(query, s); err != nil && !errors.Is(err, io.EOF) {
 			return err
-		}
-	} else {
-		list, err := n.client.NetworkservicemeshV1().NetworkServiceEndpoints(n.ns).List(s.Context(), metav1.ListOptions{})
-		if err != nil {
-			return err
-		}
-		for i := 0; i < len(list.Items); i++ {
-			item := (*registry.NetworkServiceEndpoint)(&list.Items[i].Spec)
-			if matchutils.MatchNetworkServiceEndpoints(query.NetworkServiceEndpoint, item) {
-				err := s.Send(item)
-				if err != nil {
-					return err
-				}
-			}
 		}
 	}
 	return next.NetworkServiceEndpointRegistryServer(s.Context()).Find(query, s)
